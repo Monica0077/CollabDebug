@@ -1,0 +1,112 @@
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(75, 85, 99, 0.6); /* gray-600 with 60% opacity */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+}
+
+/* Modal container */
+.modal-container {
+  background-color: #fff;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 400px;
+}
+
+/* Title */
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+/* Form group */
+.form-group {
+  margin-bottom: 16px;
+}
+
+/* Label */
+.form-label {
+  display: block;
+  font-weight: 600;
+  color: #4b5563; /* gray-700 */
+  margin-bottom: 8px;
+}
+
+/* Input */
+.form-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db; /* gray-300 */
+  border-radius: 8px;
+  outline: none;
+  font-size: 1rem;
+}
+
+.form-input:focus {
+  border-color: #6366f1; /* indigo-500 */
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3); /* focus ring */
+}
+
+/* Error alert */
+.alert-error {
+  background-color: #fee2e2; /* red-100 */
+  border-left: 4px solid #f87171; /* red-500 */
+  color: #b91c1c; /* red-700 */
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+/* Button group */
+.button-group {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Cancel button */
+.btn-cancel {
+  padding: 8px 16px;
+  background-color: #e5e7eb; /* gray-200 */
+  color: #1f2937; /* gray-800 */
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.btn-cancel:hover {
+  background-color: #d1d5db; /* gray-300 */
+}
+
+.btn-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Submit button */
+.btn-submit {
+  padding: 8px 16px;
+  background-color: #4f46e5; /* indigo-600 */
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.btn-submit:hover {
+  background-color: #4338ca; /* indigo-700 */
+}
+
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
