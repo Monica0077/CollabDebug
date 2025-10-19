@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -44,8 +46,69 @@ public class DebugSession {
     public enum SandboxStatus {
         NOT_STARTED, RUNNING, STOPPED, ERROR
     }
+    @Lob
+    @Column(name = "latest_code", columnDefinition = "text")
+    private String latestCode;
+    private String language;
+    @Column
+    private String lastModifiedBy;
+
+    @Column
+    private LocalDateTime lastModifiedAt;
+    @ElementCollection
+    private Set<String> participants = new HashSet<>();
+    @Transient
+    private String currentUser;
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    public String getCurrentUser() {
+        return currentUser;
+    }
+
+    public void setCurrentUser(String currentUser) {
+        this.currentUser = currentUser;
+    }
 
     public DebugSession() {
+    }
+
+    public String getLatestCode() {
+        return latestCode;
+    }
+
+    public void setLatestCode(String latestCode) {
+        this.latestCode = latestCode;
+    }
+
+    public String getLastModifiedBy() {
+        return lastModifiedBy;
+    }
+
+    public void setLastModifiedBy(String lastModifiedBy) {
+        this.lastModifiedBy = lastModifiedBy;
+    }
+
+    public LocalDateTime getLastModifiedAt() {
+        return lastModifiedAt;
+    }
+
+    public void setLastModifiedAt(LocalDateTime lastModifiedAt) {
+        this.lastModifiedAt = lastModifiedAt;
+    }
+
+    public Set<String> getParticipants() {
+        return participants;
+    }
+
+    public void setParticipants(Set<String> participants) {
+        this.participants = participants;
     }
 
     public DebugSession(String name, String ownerUsername, LocalDateTime createdAt, boolean isActive, SandboxStatus sandboxStatus, String sandboxContainerId) {
