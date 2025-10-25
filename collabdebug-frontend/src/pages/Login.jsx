@@ -59,7 +59,7 @@ const Login = () => {
       <div className="auth-left">
         <div className="auth-left-inner">
           <h1>CollabDebug</h1>
-          <p className="lead">Collaborative debugging sandboxes — run code, share sessions, fix faster.</p>
+          <p className="lead">Collaborative debugging sandboxes - run code, share sessions, fix faster.</p>
           <ul className="promo-list">
             <li>Isolated sandboxes (Python / Java / Node)</li>
             <li>JWT-secured sessions</li>

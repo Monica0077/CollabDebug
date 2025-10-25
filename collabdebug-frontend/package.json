@@ -11,24 +11,31 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@stomp/stompjs": "^7.2.1",
+    "axios": "^1.5.1",
+    "monaco-editor": "^0.54.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^4.11.0",
     "react-router-dom": "^6.16.0",
-    "axios": "^1.5.1"
+    "sockjs-client": "^1.6.1",
+    "stompjs": "^2.3.3",
+    "y-monaco": "^0.1.6",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.27"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/user-event": "^14.4.3",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^4.0.4",
-    "@testing-library/react": "^14.0.0",
-    "@testing-library/jest-dom": "^5.17.0",
-    "@testing-library/user-event": "^14.4.3",
-    "vite": "^4.4.9",
-    "vitest": "^0.34.4",
     "eslint": "^8.45.0",
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.3"
+    "eslint-plugin-react-refresh": "^0.4.3",
+    "vite": "^4.4.9",
+    "vitest": "^0.34.4"
   }
 }
