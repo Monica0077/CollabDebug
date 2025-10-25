@@ -48,10 +48,10 @@ public class CollabController {
             // Note: The Redis message listener *should* be doing this if using a broker config.
             // If not, explicitly send to the destination topic.
             // The frontend is subscribed to: /topic/session/{sessionId}/edits
-            messagingTemplate.convertAndSend(
-                    "/topic/session/" + sessionId + "/edits",
-                    edit // Send the original edit message to the topic
-            );
+//            messagingTemplate.convertAndSend(
+//                    "/topic/session/" + sessionId + "/edits",
+//                    edit // Send the original edit message to the topic
+//            );
 
         } else {
             // Send back current doc so client can resync (Optimization)
@@ -61,21 +61,36 @@ public class CollabController {
 
     @MessageMapping("/session/{sessionId}/chat")
     public void receiveChat(@DestinationVariable String sessionId, @Payload ChatMessage chat, Principal principal){
-        // 🚨 FIX: Add null check for principal if you can't fix WebSocket auth immediately
+        String userIdFromAuth = null;
+
+        // 1. Try to get the user ID from the authenticated Principal
+        if (principal != null) {
+            userIdFromAuth = principal.getName();
+            // Optional: Validate that the user in the principal matches the user in the payload
+            if (!userIdFromAuth.equals(chat.getUserId())) {
+                System.err.println("SECURITY WARNING: Auth principal (" + userIdFromAuth + ") does not match payload user (" + chat.getUserId() + ")");
+                // For now, trust the authenticated user, but use payload's user for display if principal is null
+            }
+        }
+
+        // 2. 🚨 FIX THE ANONYMOUS ID: If principal is null, rely on the client-provided userId
         if (principal == null) {
-            System.err.println("WARNING: Principal is null in receiveChat. Skipping user assignment.");
-            chat.userId = "Anonymous-" + System.currentTimeMillis(); // Assign a dummy ID
+            System.err.println("WARNING: Principal is null. Relying on payload userId: " + chat.getUserId());
+            // The client provides the correct ID, so we trust it here to fix the display issue.
         } else {
-            chat.userId = principal.getName();
+            // If authenticated, overwrite the payload's userId with the secure principal's name
+            chat.setUserId(userIdFromAuth);
         }
 
         // store in DB if needed, then publish
         redisPublisher.publishChat(chat);
 
-        // 🚨 FIX: Send the chat back to ALL subscribers on the topic
-        messagingTemplate.convertAndSend(
-                "/topic/session/" + sessionId + "/chat",
-                chat
-        );
+        // 3. 🚨 FIX DUPLICATION: Ensure you DO NOT send the message directly to the topic here.
+        // The Redis Listener is responsible for picking it up and broadcasting it.
+        // Keep this part commented out:
+//        messagingTemplate.convertAndSend(
+//                "/topic/session/" + sessionId + "/chat",
+//                chat
+//        );
     }
 }

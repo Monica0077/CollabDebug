@@ -1,17 +1,17 @@
 package com.collabdebug.collabdebug_backend.service;
 
 import com.collabdebug.collabdebug_backend.dto.ws.EditMessage;
-import com.collabdebug.collabdebug_backend.dto.ws.EditOperation;
 import com.collabdebug.collabdebug_backend.dto.ws.EditResponse;
 import com.collabdebug.collabdebug_backend.model.DebugSession;
+import com.collabdebug.collabdebug_backend.redis.RedisPublisher;
 import com.collabdebug.collabdebug_backend.repository.DebugSessionRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -21,6 +21,9 @@ public class SessionService {
 
     private final DebugSessionRepository sessionRepository;
     private final SimpMessagingTemplate msgTemplate;
+    public static final String CHAT_REDIS_TOPIC_PREFIX = "chat-updates:";
+    public static final String TERMINAL_REDIS_TOPIC_PREFIX = "terminal-updates:";
+    private final RedisPublisher redisPublisher;
 
     // Docker container mapping: sessionId -> containerName
     private final Map<UUID, String> sessionDockerMap = new ConcurrentHashMap<>();
@@ -33,12 +36,14 @@ public class SessionService {
     private final Map<String, AtomicLong> serverVersion = new ConcurrentHashMap<>();
 
     @Autowired
-    public SessionService(DebugSessionRepository sessionRepository, SimpMessagingTemplate msgTemplate) {
+    public SessionService(DebugSessionRepository sessionRepository, SimpMessagingTemplate msgTemplate, RedisPublisher redisPublisher) {
         this.sessionRepository = sessionRepository;
         this.msgTemplate = msgTemplate;
+        this.redisPublisher = redisPublisher;
     }
 
     // ------------------- Session Management -------------------
+    // ... (createSession, listActiveSessions, joinSession, leaveSession, endSession remain unchanged)
 
     @Transactional
     public DebugSession createSession(String sessionName, Authentication authentication) {
@@ -111,7 +116,32 @@ public class SessionService {
 
     // ------------------- Docker Management -------------------
 
-    // (Docker methods remain unchanged)
+    /**
+     * @param containerName The name of the container to check.
+     * @return true if the container exists (running or stopped), false otherwise.
+     */
+    private boolean checkContainerExists(String containerName) throws Exception {
+        // 1. Build the process to inspect the container by name
+        Process process = new ProcessBuilder("docker", "inspect", containerName).start();
+
+        // 2. Consume the streams to prevent blocking
+        // We don't care about the content, only that the buffers are cleared.
+        // Reading all bytes ensures the process isn't waiting for the Java thread.
+        String output = new String(process.getInputStream().readAllBytes()).trim();
+        String error = new String(process.getErrorStream().readAllBytes()).trim();
+
+        // 3. Wait for the process to complete and get the exit code
+        int exitCode = process.waitFor();
+
+        // Log the result for debugging
+        System.out.println("Docker Inspect for " + containerName + " finished with exit code: " + exitCode);
+        if (exitCode != 0) {
+            System.err.println("Docker Inspect Error Output: " + error);
+        }
+
+        // 4. A zero exit code means the container was found (exists).
+        return exitCode == 0;
+    }
 
     private boolean isContainerRunning(String containerName) throws Exception {
         Process process = new ProcessBuilder("docker", "inspect", "-f", "{{.State.Running}}", containerName).start();
@@ -132,35 +162,79 @@ public class SessionService {
             default -> throw new IllegalArgumentException("Unsupported language: " + language);
         };
 
+        // If 'docker run' with --name fails because the name exists, it throws the exception we want to avoid.
         Process process = new ProcessBuilder(
                 "docker", "run", "-dit", "--name", containerName, imageName, "tail", "-f", "/dev/null"
         ).start();
-        if (process.waitFor() != 0) throw new RuntimeException("Failed to create Docker container: " + containerName);
+
+        // Check the exit code of the 'docker run' command
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            String error = new String(process.getErrorStream().readAllBytes()).trim();
+
+            // 🚨 Defensive check for the "name already in use" error
+            if (error.contains("already in use")) {
+                // Throw a custom exception to be handled by the caller, or throw a more generic error
+                // For now, let's re-throw the original error to be caught below, or just rely on 'checkContainerExists'
+                throw new RuntimeException("Failed to create Docker container: " + containerName + ". Error: " + error);
+            }
+            throw new RuntimeException("Failed to create Docker container: " + containerName + ". Error: " + error);
+        }
     }
 
+    private void broadcastTerminalOutput(UUID sessionId, String output) {
+        redisPublisher.publishTerminalOutput(sessionId.toString(), output);
+    }
+
+    // 🚨 FIX: Combined defensive logic to handle container reuse after restart
     public String runCodeInDocker(UUID sessionId, String language, String code) throws Exception {
         DebugSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new RuntimeException("Session not found"));
 
-        // Save code to DB and memory
+        // 1. Save state (Correct)
         session.setLatestCode(code);
         session.setLanguage(language);
         sessionRepository.save(session);
         documentMaster.put(sessionId.toString(), code);
 
         String containerName = sessionDockerMap.get(sessionId);
+        String requiredName = "session_" + sessionId.toString().replace("-", "");
 
-        if (containerName != null && !isContainerRunning(containerName)) {
+        // 2. Check in-memory map first
+        if (containerName == null) {
+            containerName = requiredName;
+
+            // 🚨 CORE FIX: Check Docker's persistent state
+            if (checkContainerExists(containerName)) {
+                // Container exists in Docker (running or stopped).
+                System.out.println("Container " + containerName + " found in Docker. Reusing it.");
+
+                // Re-map it in the backend's memory
+                sessionDockerMap.put(sessionId, containerName);
+            } else {
+                // Container does not exist in Docker or memory: Create it fresh
+                System.out.println("Container " + containerName + " not found. Creating new container.");
+
+                // createDockerContainer now throws a RuntimeException on failure
+                createDockerContainer(containerName, language);
+                sessionDockerMap.put(sessionId, containerName);
+            }
+        }
+
+        // 3. Ensure the container is running before executing code
+        if (!isContainerRunning(containerName)) {
+            System.out.println("Container " + containerName + " is not running. Starting it.");
             startDockerContainer(containerName);
         }
 
-        if (containerName == null) {
-            containerName = "session_" + sessionId.toString().replace("-", "");
-            createDockerContainer(containerName, language);
-            sessionDockerMap.put(sessionId, containerName);
-        }
+        // 4. Execute the code (The final step)
+        String output = executeCodeInContainer(containerName, language, code);
 
-        return executeCodeInContainer(containerName, language, code);
+        // 5. Broadcast the terminal output after execution
+        broadcastTerminalOutput(sessionId, output);
+
+        // 6. Return the output to the caller (e.g., REST controller)
+        return output;
     }
 
     public void stopContainer(UUID sessionId) {
@@ -194,6 +268,7 @@ public class SessionService {
         execProcess.waitFor();
 
         if (!error.isEmpty()) output += "\nERROR:\n" + error;
+
         return output;
     }
 
@@ -203,17 +278,18 @@ public class SessionService {
     }
 
     // ------------------- WebSocket Collaboration -------------------
+    // ... (userJoined, userLeft, applyEdit, replyToUser remain unchanged)
 
     public void userJoined(String sessionId, String connectionId, String userId) {
         sessionToLocalConnectionIds.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(connectionId);
-        msgTemplate.convertAndSend("/topic/session/" + sessionId + "/presence",
+        redisPublisher.publishPresence(sessionId,
                 Map.of("type", "joined", "userId", userId));
     }
 
     public void userLeft(String sessionId, String connectionId, String userId) {
         Set<String> set = sessionToLocalConnectionIds.get(sessionId);
         if (set != null) set.remove(connectionId);
-        msgTemplate.convertAndSend("/topic/session/" + sessionId + "/presence",
+        redisPublisher.publishPresence(sessionId,
                 Map.of("type", "left", "userId", userId));
     }
 
@@ -271,15 +347,6 @@ public class SessionService {
         return response;
     }
 
-    // 🚨 FIX 4: Remove or comment out the problematic range-based function
-    // private String applyOperationToText(String doc, EditOperation op) {
-    //     // THIS WAS THE CRASH POINT: op.rangeStart and op.rangeEnd were NULL.
-    //     int start = Integer.parseInt(op.rangeStart);
-    //     int end = Integer.parseInt(op.rangeEnd);
-    //     String before = doc.substring(0, start);
-    //     String after = doc.substring(end);
-    //     return before + (op.text == null ? "" : op.text) + after;
-    // }
 
     public void replyToUser(String userId, String destination, Object payload) {
         // Sends message to the user-specific queue

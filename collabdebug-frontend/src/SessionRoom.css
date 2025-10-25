@@ -1,212 +1,200 @@
-/* SessionRoom.css */
-
+/* ==================================== */
+/* 1. Overall Layout (Flex Container) */
+/* ==================================== */
 .session-room-container {
-  display: flex;
-  height: 100vh;
-  background-color: #f3f4f6; /* light gray */
-  font-family: Arial, sans-serif;
+    display: flex; /* Main layout: Editor+Terminal | Sidebar */
+    height: 100vh;
+    overflow: hidden; /* Prevent body scroll */
+    background-color: #f3f4f6; /* Light gray background */
+    font-family: Arial, sans-serif;
 }
 
-.editor-section {
-  width: 75%;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-}
-
-.controls-panel {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px;
-  margin-bottom: 12px;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.controls-panel h2 {
-  font-size: 1.25rem;
-  font-weight: bold;
-}
-
-.controls-panel select {
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-}
-
-.controls-panel button {
-  background-color: #16a34a; /* green */
-  color: #fff;
-  font-weight: bold;
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.controls-panel button:hover {
-  background-color: #15803d;
-}
-
-.editor-container {
-  flex-grow: 1;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.terminal-panel {
-  margin-top: 12px;
-  height: 160px;
-  background-color: #1f2937; /* dark gray */
-  color: #fff;
-  padding: 8px;
-  border-radius: 8px;
-  font-family: monospace;
-  overflow-y: auto;
-  font-size: 0.875rem;
-}
-
-.side-panel {
-  width: 25%;
-  background-color: #fff;
-  padding: 16px;
-  border-left: 1px solid #ccc;
-  display: flex;
-  flex-direction: column;
-}
-
-.side-panel h3 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.side-panel .chat-placeholder {
-  flex-grow: 1;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  padding: 8px;
-  overflow-y: auto;
-  color: #6b7280; /* gray text */
-  font-size: 0.875rem;
-}
-/* Container for the whole session room */
-.session-room-container {
-  display: flex;
-  height: 100vh;
-  background-color: #f3f4f6;
-}
-
-/* Main editor panel */
+/* ==================================== */
+/* 2. Main Area (Editor & Terminal) */
+/* ==================================== */
 .session-main {
-  flex: 3;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
+    flex-grow: 1; /* Takes up all available horizontal space */
+    display: flex;
+    flex-direction: column; /* Stacks header, editor, and terminal vertically */
+    padding: 16px;
 }
 
-/* Header controls */
+/* Header/Controls Bar */
 .session-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  padding: 8px;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 8px 16px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.session-header h2 {
-  font-size: 20px;
-  font-weight: bold;
-}
-
+/* Controls (buttons/select) */
 .session-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .session-controls select {
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
 }
 
 .session-controls button {
-  background-color: #4f46e5;
-  color: #fff;
-  font-weight: bold;
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
+    background-color: #4f46e5; /* Indigo/Blue */
+    color: #fff;
+    font-weight: bold;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
 }
 
-/* Editor container */
+.session-controls .danger {
+    background-color: #dc3545; /* Red for End/Stop */
+}
+
+/* Area containing both Editor and Terminal */
+.editor-terminal-area {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1; /* Takes up all remaining vertical space */
+    overflow: hidden; /* Ensures child elements respect its bounds */
+}
+
+/* Editor Container (Monaco) */
 .editor-container {
-  flex-grow: 1;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    flex-basis: 70%; /* Takes 70% of vertical space in .editor-terminal-area */
+    min-height: 400px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 16px; /* Space between editor and terminal */
 }
 
-/* Terminal/output panel */
+/* Terminal Output */
 .terminal-output {
-  margin-top: 16px;
-  height: 160px;
-  background-color: #111827;
-  color: #fff;
-  padding: 8px;
-  border-radius: 8px;
-  font-family: monospace;
-  overflow-y: scroll;
-  font-size: 14px;
+    flex-basis: 30%; /* Takes 30% of vertical space in .editor-terminal-area */
+    background-color: #111827; /* Dark background */
+    color: #0f0; /* Bright green text */
+    padding: 10px;
+    border-radius: 8px;
+    font-family: monospace;
+    overflow-y: auto;
+    font-size: 14px;
 }
 
-/* Side panel */
+.terminal-output pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+
+/* ==================================== */
+/* 3. Sidebar (Participants & Chat) */
+/* ==================================== */
 .session-side {
-  flex: 1;
-  background-color: #fff;
-  padding: 16px;
-  border-left: 1px solid #e5e7eb;
-  display: flex;
-  flex-direction: column;
+    width: 300px; /* Fixed width for the sidebar */
+    flex-shrink: 0; /* Prevents shrinking */
+    background-color: #ffffff;
+    padding: 16px;
+    border-left: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column; /* Stacks Participants and Chat */
 }
 
 .session-side h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 12px;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 12px;
 }
 
-.session-owner {
-  margin-bottom: 16px;
+/* Participants Panel */
+.participants-panel {
+    flex-shrink: 0;
+    margin-bottom: 16px;
 }
 
 .participants-list {
-  flex-grow: 1;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 8px;
-  overflow-y: auto;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 8px;
 }
 
 .participant {
-  padding: 4px 0;
+    padding: 4px 0;
+    color: #555;
 }
 
 .participant-you {
-  font-weight: bold;
-  color: #1f2937;
+    font-weight: bold;
+    color: #4f46e5; /* Match control button color */
 }
 
-.no-participants {
-  color: #999;
+
+/* Chat Panel */
+.chat-panel {
+    flex-grow: 1; /* Takes all remaining vertical space */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Important for chat message scrolling */
+}
+
+.chat-messages {
+    flex-grow: 1;
+    overflow-y: auto; /* Enable message scrolling */
+    padding: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.chat-message {
+    padding: 5px;
+    margin: 5px 0;
+    border-radius: 8px;
+    max-width: 85%; /* Use slightly more space */
+    word-wrap: break-word;
+    font-size: 0.9rem;
+}
+
+.message-self {
+    background-color: #e0f7fa; /* Light cyan/blue for self */
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+.message-other {
+    background-color: #f0f0f0; /* Light gray for others */
+    align-self: flex-start;
+}
+
+.chat-input-form {
+    display: flex;
+    flex-shrink: 0;
+}
+
+.chat-input-form input {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px 0 0 4px;
+    outline: none;
+}
+
+.chat-input-form button {
+    padding: 10px 15px;
+    background-color: #10b981; /* Teal/Green send button */
+    color: white;
+    border: none;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
 }

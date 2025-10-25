@@ -25,11 +25,15 @@ const SessionRoom = () => {
     const [participants, setParticipants] = useState([]);
     const [currentUser, setCurrentUser] = useState('');
     const [showEndConfirm, setShowEndConfirm] = useState(false);
-
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState('');
     // ✅ FIX 1: Ref to hold the Monaco Editor instance (requires CollabEditor to use forwardRef)
     const editorRef = useRef(null); 
-
+    const chatEndRef = useRef(null);
+    const stompClientRef = useRef(null);
+    
     const [stompClient, setStompClient] = useState(null); 
+    const [isConnected, setIsConnected] = useState(false);
     
     // ✅ Use a Ref to hold the latest currentUser for stable subscriptions
     const currentUserRef = useRef(currentUser);
@@ -63,6 +67,10 @@ const SessionRoom = () => {
     // --- WebSocket / STOMP Setup ---
     useEffect(() => {
         // 🔑 Get token
+        if (stompClientRef.current) {
+            console.log('STOMP client already active. Skipping setup.');
+            return; 
+        }
         const token = localStorage.getItem("token"); 
         if (!token) {
             console.error("JWT token is missing. WebSocket handshake will fail.");
@@ -89,8 +97,9 @@ const SessionRoom = () => {
         // Set up connection handlers
         client.onConnect = () => {
             console.log('STOMP connected');
+            setIsConnected(true);
 
-            // ✅ FIX 2: Subscribe to the public topic for successful edits (from other users)
+            // Subscribe to the public topic for successful edits (from other users)
             client.subscribe(`/topic/session/${sessionId}/edits`, (message) => {
                 const edit = JSON.parse(message.body);
                 
@@ -110,7 +119,7 @@ const SessionRoom = () => {
                 }
             });
 
-            // ✅ FIX 4: Subscribe to the private queue for server resyncs/rejections
+            // Subscribe to the private queue for server resyncs/rejections
             client.subscribe(`/user/queue/edits`, (message) => {
                 const response = JSON.parse(message.body);
                 
@@ -128,20 +137,68 @@ const SessionRoom = () => {
                     }
                 }
             });
+            // Terminal Output Subscription
+            client.subscribe(`/topic/session/${sessionId}/terminal`, (message) => {
+                // message.body should be the raw output string from the Redis subscriber
+                setTerminalOutput(prev => prev + `\n--- RUN RESULT ---\n${message.body}`);
+                console.log("[Terminal] Received new output.");
+            });
             
-            // TODO: Add subscriptions for terminal output and participant list updates here
+            // Chat Subscription
+            client.subscribe(`/topic/session/${sessionId}/chat`, (message) => {
+                const chatMessage = JSON.parse(message.body);
+                setChatMessages(prev => [...prev, chatMessage]);
+            });
+            
+            //  Presence (Participants) Subscription
+            client.subscribe(`/topic/session/${sessionId}/presence`, (message) => {
+                const event = JSON.parse(message.body);
+                if (event.type === 'joined') {
+                    setParticipants(prev => {
+                        if (!prev.includes(event.userId)) {
+                            return [...prev, event.userId];
+                        }
+                        return prev;
+                    });
+                } else if (event.type === 'left') {
+                    setParticipants(prev => prev.filter(p => p !== event.userId));
+                }
+            });
         };
         
+        client.onWebSocketClose = () => {
+        console.warn('STOMP disconnected');
+        setIsConnected(false); // Set connection state to false on close
+        };
         client.activate();
         setStompClient(client);
+        stompClientRef.current = client;
 
         return () => {
             // Clean up on unmount
             if(client.connected) client.deactivate();
+            setIsConnected(false);
+            stompClientRef.current = null;
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]); 
-
+    // --- Chat Handler ---
+    const sendChatMessage = useCallback((e) => {
+        e.preventDefault(); // Prevent form submission
+        if(stompClient && stompClient.connected && chatInput.trim() !== '') {
+            const chatMessage = {
+                sessionId,
+                userId: currentUserRef.current, // userId is mandatory in the DTO
+                text: chatInput.trim(),
+            };
+            
+            stompClient.publish({
+                destination: `/app/session/${sessionId}/chat`,
+                body: JSON.stringify(chatMessage)
+            });
+            
+            setChatInput(''); // Clear input after sending
+        }
+    }, [stompClient, sessionId, chatInput]);
     // Handler to send the local edit via WebSocket
     const sendEdit = useCallback((newCode) => {
         if(stompClient && stompClient.connected) { 
@@ -192,10 +249,15 @@ const SessionRoom = () => {
 
 
     const handleRunCode = async () => {
-        setTerminalOutput(prev => prev + `\n> Running code in ${language} sandbox...`);
+        // Only update with a starting message locally
+        setTerminalOutput(prev => prev + `\n> Running code in ${language} sandbox (waiting for result via WebSocket)...`);
+        
         try {
-            const output = await runCode(sessionId, language, code);
-            setTerminalOutput(prev => prev + `\n${output}`);
+            // The runCode API call triggers the backend to execute and then publish to Redis/WebSocket
+            await runCode(sessionId, language, code);
+            // DO NOT setTerminalOutput with the return value here, 
+            // the synchronization logic handles the update via the subscription.
+            
         } catch (err) {
             setTerminalOutput(prev => prev + `\nERROR: ${err.response?.data || err.message}`);
         }
@@ -233,6 +295,7 @@ const SessionRoom = () => {
     return (
         <div className="session-room-container">
             <div className="session-main">
+                {/* ... (Session Header remains the same) ... */}
                 <div className="session-header">
                     <h2>Session: {sessionId.substring(0,8)}...</h2>
                     <div className="session-controls">
@@ -252,32 +315,60 @@ const SessionRoom = () => {
                         )}
                     </div>
                 </div>
+                
+                {/* Editor and Terminal */}
+                <div className="editor-terminal-area">
+                    <div className="editor-container">
+                        <CollabEditor
+                            ref={editorRef}
+                            sessionId={sessionId}
+                            currentUserId={currentUser}
+                            code={code}
+                            onCodeChange={handleCodeChange} 
+                            language={language}
+                        />
+                    </div>
 
-                <div className="editor-container">
-                    <CollabEditor
-                        // ✅ FIX 5: Pass the editorRef to the child component
-                        ref={editorRef}
-                        sessionId={sessionId}
-                        currentUserId={currentUser}
-                        code={code}
-                        onCodeChange={handleCodeChange} 
-                        language={language}
-                    />
+                    <div className="terminal-output"><pre>{terminalOutput}</pre></div>
                 </div>
-
-                <div className="terminal-output"><pre>{terminalOutput}</pre></div>
             </div>
 
+            {/* Sidebar with Participants and Chat */}
             <div className="session-side">
-                <h3>Participants & Owner</h3>
-                <div><strong>Owner:</strong> {owner}</div>
-                <div className="participants-list">
-                    {/* Assuming participants is an array of strings */}
-                    {participants.map(p => (
-                        <div key={p} className={`participant ${p === currentUser ? 'participant-you' : ''}`}>
-                            {p} {p === currentUser && '(You)'}
-                        </div>
-                    ))}
+                {/* Participants List (Upper half of sidebar) */}
+                <div className="side-panel participants-panel">
+                    <h3>Participants</h3>
+                    <div><strong>Owner:</strong> {owner}</div>
+                    <div className="participants-list">
+                        {participants.map(p => (
+                            <div key={p} className={`participant ${p === currentUser ? 'participant-you' : ''}`}>
+                                {p} {p === currentUser && '(You)'}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Chat Panel (Lower half of sidebar) */}
+                <div className="side-panel chat-panel">
+                    <h3>Session Chat</h3>
+                    <div className="chat-messages">
+                        {chatMessages.map((msg, index) => (
+                            <div key={index} className={`chat-message ${msg.userId === currentUser ? 'message-self' : 'message-other'}`}>
+                                <strong>{msg.userId === currentUser ? 'You' : msg.userId}:</strong> {msg.text}
+                            </div>
+                        ))}
+                        <div ref={chatEndRef} /> {/* Scroll target */}
+                    </div>
+                    <form onSubmit={sendChatMessage} className="chat-input-form">
+                        <input
+                            type="text"
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            placeholder="Type a message..."
+                            disabled={!isConnected}
+                        />
+                        <button type="submit" disabled={!isConnected || chatInput.trim() === ''}>Send</button>
+                    </form>
                 </div>
             </div>
 

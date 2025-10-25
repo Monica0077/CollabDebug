@@ -30,4 +30,17 @@ public class RedisPublisher {
         // Optional: persist chat to Redis if needed for history
         redisTemplate.opsForList().rightPush("session-chat-history:" + chat.sessionId, chat);
     }
+    // 🚨 NEW: Publish terminal output
+    public void publishTerminalOutput(String sessionId, String output) {
+        // Use a simple map/DTO for the terminal output payload if needed,
+        // but a raw string often suffices.
+        String channel = "session-terminal:" + sessionId;
+        redisTemplate.convertAndSend(channel, output);
+    }
+
+    // 🚨 NEW: Publish presence updates
+    public void publishPresence(String sessionId, Object payload) {
+        String channel = "session-presence:" + sessionId;
+        redisTemplate.convertAndSend(channel, payload);
+    }
 }
