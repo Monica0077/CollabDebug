@@ -1,8 +1,9 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
 export default function NavBar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const token = localStorage.getItem("token");
 
   const handleLogout = () => {
@@ -19,11 +20,23 @@ export default function NavBar() {
       </div>
 
       <nav className="nav-center">
-        <Link to="/">Home</Link>
+        <Link to="/" className={location.pathname === '/' ? 'active' : ''}>
+          Home
+        </Link>
         {token ? (
           <>
-            <Link to="/features">Features</Link>
-            <Link to="/docs">Docs</Link>
+            <Link 
+              to="/features" 
+              className={location.pathname === '/features' ? 'active' : ''}
+            >
+              Features
+            </Link>
+            <Link 
+              to="/docs" 
+              className={location.pathname === '/docs' ? 'active' : ''}
+            >
+              Docs
+            </Link>
           </>
         ) : null}
       </nav>
@@ -36,7 +49,12 @@ export default function NavBar() {
           </>
         ) : (
           <>
-            <button className="btn btn-outline" onClick={() => navigate("/dashboard")}>Dashboard</button>
+            <Link 
+              to="/dashboard" 
+              className={`btn ${location.pathname === '/dashboard' ? 'btn-primary' : 'btn-outline'}`}
+            >
+              Dashboard
+            </Link>
             <button className="btn btn-danger" onClick={handleLogout}>Logout</button>
           </>
         )}
