@@ -22,7 +22,6 @@ export default function NavBar() {
         <Link to="/">Home</Link>
         {token ? (
           <>
-            <Link to="/sandbox">Sandbox</Link>
             <Link to="/features">Features</Link>
             <Link to="/docs">Docs</Link>
           </>
@@ -37,7 +36,7 @@ export default function NavBar() {
           </>
         ) : (
           <>
-            <button className="btn btn-outline" onClick={() => navigate("/sandbox")}>Dashboard</button>
+            <button className="btn btn-outline" onClick={() => navigate("/dashboard")}>Dashboard</button>
             <button className="btn btn-danger" onClick={handleLogout}>Logout</button>
           </>
         )}

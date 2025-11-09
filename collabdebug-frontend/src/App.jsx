@@ -18,9 +18,22 @@ function App() {
     // storage event fires for other windows; custom 'auth' event used for same-tab updates
     window.addEventListener("storage", handler);
     window.addEventListener("auth", handler);
+
+    // Add window beforeunload handler for auto-logout
+    const handleBeforeUnload = (e) => {
+      // If it's a refresh (navigation within same origin), don't logout
+      if (e.currentTarget.performance.navigation.type === 1) {
+        return;
+      }
+      localStorage.removeItem("token");
+      setToken(null);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
     return () => {
       window.removeEventListener("storage", handler);
       window.removeEventListener("auth", handler);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
 
@@ -52,8 +65,8 @@ function App() {
           <Route path="/features" element={token ? <Features /> : <Navigate to="/login" />} />
           <Route path="/docs" element={token ? <Docs /> : <Navigate to="/login" />} />
 
-          {/* Home: redirect depending on auth */}
-          <Route path="/" element={<Navigate to={token ? "/dashboard" : "/login"} />} />
+          {/* Home: redirect to login if not authenticated */}
+          <Route path="/" element={token ? <Home /> : <Navigate to="/login" />} />
         </Routes>
       </div>
     </Router>

@@ -64,6 +64,25 @@ const SessionRoom = () => {
         loadSession();
     }, [sessionId]);
 
+    // Add periodic sync for participants list
+    useEffect(() => {
+        const syncParticipants = async () => {
+            try {
+                const session = await joinSession(sessionId);
+                if (JSON.stringify(session.participants) !== JSON.stringify(participants)) {
+                    console.log('[Presence] Syncing participants from server:', session.participants);
+                    setParticipants(session.participants || []);
+                }
+            } catch (err) {
+                console.error("Failed to sync participants:", err);
+            }
+        };
+
+        // Sync every 30 seconds
+        const syncInterval = setInterval(syncParticipants, 30000);
+        return () => clearInterval(syncInterval);
+    }, [sessionId, participants]);
+
     // --- WebSocket / STOMP Setup ---
     useEffect(() => {
         // 🔑 Get token
@@ -139,29 +158,70 @@ const SessionRoom = () => {
             });
             // Terminal Output Subscription
             client.subscribe(`/topic/session/${sessionId}/terminal`, (message) => {
-                // message.body should be the raw output string from the Redis subscriber
-                setTerminalOutput(prev => prev + `\n--- RUN RESULT ---\n${message.body}`);
-                console.log("[Terminal] Received new output.");
+                // Use a Set to track message IDs we've already processed
+                const messageId = message.headers['message-id'];
+                if (messageId) {
+                    setTerminalOutput(prev => {
+                        const output = message.body;
+                        if (prev.includes(output)) {
+                            return prev; // Skip duplicate output
+                        }
+                        return prev + `\n--- RUN RESULT ---\n${output}`;
+                    });
+                }
             });
             
             // Chat Subscription
             client.subscribe(`/topic/session/${sessionId}/chat`, (message) => {
                 const chatMessage = JSON.parse(message.body);
-                setChatMessages(prev => [...prev, chatMessage]);
+                const messageId = message.headers['message-id'];
+                
+                setChatMessages(prev => {
+                    // Check if we already have this message (by content and timestamp)
+                    const isDuplicate = prev.some(msg => 
+                        msg.userId === chatMessage.userId && 
+                        msg.text === chatMessage.text &&
+                        msg.timestamp === chatMessage.timestamp
+                    );
+                    
+                    if (isDuplicate) {
+                        return prev;
+                    }
+                    return [...prev, chatMessage];
+                });
             });
             
             //  Presence (Participants) Subscription
             client.subscribe(`/topic/session/${sessionId}/presence`, (message) => {
-                const event = JSON.parse(message.body);
-                if (event.type === 'joined') {
-                    setParticipants(prev => {
-                        if (!prev.includes(event.userId)) {
-                            return [...prev, event.userId];
-                        }
-                        return prev;
+                try {
+                    const event = JSON.parse(message.body);
+                    // Enhanced logging
+                    console.log(`[Presence] Received event:`, {
+                        type: event.type,
+                        userId: event.userId,
+                        timestamp: new Date().toISOString()
                     });
-                } else if (event.type === 'left') {
-                    setParticipants(prev => prev.filter(p => p !== event.userId));
+
+                    if (event.type === 'joined') {
+                        setParticipants(prev => {
+                            const newList = prev.includes(event.userId) ? prev : [...prev, event.userId];
+                            console.log('[Presence] After join - Current participants:', newList);
+                            return newList;
+                        });
+                    } else if (event.type === 'left') {
+                        setParticipants(prev => {
+                            // Enhanced filtering with better logging
+                            console.log(`[Presence] Attempting to remove user ${event.userId}`);
+                            console.log(`[Presence] Current participants:`, prev);
+                            
+                            const newList = prev.filter(p => p !== event.userId);
+                            
+                            console.log(`[Presence] Updated participants:`, newList);
+                            return newList;
+                        });
+                    }
+                } catch (error) {
+                    console.error('[Presence] Error handling presence event:', error);
                 }
             });
         };
@@ -189,6 +249,7 @@ const SessionRoom = () => {
                 sessionId,
                 userId: currentUserRef.current, // userId is mandatory in the DTO
                 text: chatInput.trim(),
+                timestamp: Date.now() // Add timestamp to help identify unique messages
             };
             
             stompClient.publish({
