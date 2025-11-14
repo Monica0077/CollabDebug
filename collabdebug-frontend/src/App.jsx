@@ -20,20 +20,15 @@ function App() {
     window.addEventListener("auth", handler);
 
     // Add window beforeunload handler for auto-logout
-    const handleBeforeUnload = (e) => {
-      // If it's a refresh (navigation within same origin), don't logout
-      if (e.currentTarget.performance.navigation.type === 1) {
-        return;
-      }
-      localStorage.removeItem("token");
-      setToken(null);
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    // NOTE: We intentionally do NOT clear token on beforeunload. Clearing
+    // on refresh breaks session persistence. Token should only be removed on
+    // explicit logout. Keeping the listener would cause users to be returned
+    // to the login page after refresh in some browsers.
 
     return () => {
       window.removeEventListener("storage", handler);
       window.removeEventListener("auth", handler);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+  // no beforeunload listener to remove
     };
   }, []);
 

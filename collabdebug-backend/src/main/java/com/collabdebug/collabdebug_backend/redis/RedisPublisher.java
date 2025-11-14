@@ -43,4 +43,16 @@ public class RedisPublisher {
         String channel = "session-presence:" + sessionId;
         redisTemplate.convertAndSend(channel, payload);
     }
+
+    // 🚨 NEW: Publish session end event
+    public void publishSessionEnded(String sessionId, Object payload) {
+        String channel = "session-end:" + sessionId;
+        redisTemplate.convertAndSend(channel, payload);
+    }
+
+    // 🚨 NEW: Publish session metadata changes (language, etc.)
+    public void publishSessionMeta(String sessionId, Object payload) {
+        String channel = "session-meta:" + sessionId;
+        redisTemplate.convertAndSend(channel, payload);
+    }
 }

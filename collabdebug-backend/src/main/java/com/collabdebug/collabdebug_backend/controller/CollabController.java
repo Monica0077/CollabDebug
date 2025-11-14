@@ -15,6 +15,11 @@ import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
+import java.util.Map;
+import java.util.UUID;
+
+import com.collabdebug.collabdebug_backend.model.DebugSession;
+import com.collabdebug.collabdebug_backend.repository.DebugSessionRepository;
 
 @Controller
 public class CollabController {
@@ -24,6 +29,8 @@ public class CollabController {
     private RedisPublisher redisPublisher;
     @Autowired
     private SimpMessagingTemplate messagingTemplate; // 🚨 Inject the template
+    @Autowired
+    private DebugSessionRepository sessionRepository;
 
     @MessageMapping("/session/{sessionId}/edit")
     public void receiveEdit(@DestinationVariable String sessionId,
@@ -92,5 +99,44 @@ public class CollabController {
 //                "/topic/session/" + sessionId + "/chat",
 //                chat
 //        );
+    }
+
+    @MessageMapping("/session/{sessionId}/meta")
+    public void receiveMeta(@DestinationVariable String sessionId, @Payload Map<String, Object> meta, Principal principal) {
+        String language = (String) meta.get("language");
+        String userId = principal != null ? principal.getName() : (String) meta.get("userId");
+
+        // Persist language change if possible
+        try {
+            UUID sid = UUID.fromString(sessionId);
+            sessionRepository.findById(sid).ifPresent(session -> {
+                session.setLanguage(language);
+                sessionRepository.save(session);
+            });
+        } catch (Exception e) {
+            System.err.println("Failed to persist session language change: " + e.getMessage());
+        }
+
+        // Publish via Redis for cross-instance broadcast
+        try {
+            Object latestCode = meta.get("latestCode");
+            Map<String, Object> payload;
+            if (latestCode != null) {
+                payload = Map.of("type", "language", "language", language, "userId", userId, "latestCode", latestCode);
+            } else {
+                payload = Map.of("type", "language", "language", language, "userId", userId);
+            }
+            // Publish to Redis so other backend instances receive this update
+            redisPublisher.publishSessionMeta(sessionId, payload);
+
+            // Also send directly to local subscribers to ensure immediate propagation
+            try {
+                messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/meta", payload);
+            } catch (Exception ex) {
+                System.err.println("Failed to send local session meta websocket message: " + ex.getMessage());
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to publish session meta change: " + e.getMessage());
+        }
     }
 }

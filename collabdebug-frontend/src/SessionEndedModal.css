@@ -1,0 +1,48 @@
+.session-ended-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.session-ended-container {
+  background: #fff;
+  width: min(800px, 95%);
+  max-width: 1000px;
+  padding: 32px;
+  border-radius: 10px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+
+.session-ended-container h1 {
+  margin: 0 0 12px 0;
+  font-size: 28px;
+  color: #c22;
+}
+
+.session-ended-container p {
+  color: #333;
+  font-size: 18px;
+  margin-bottom: 20px;
+}
+
+.session-ended-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.session-ended-ok {
+  background: #007bff;
+  color: white;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.session-ended-ok:hover { background: #005bb5 }

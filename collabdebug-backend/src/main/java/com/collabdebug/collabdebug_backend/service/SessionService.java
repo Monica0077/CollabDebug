@@ -30,6 +30,8 @@ public class SessionService {
 
     // WebSocket session tracking: sessionId -> connectionIds
     private final Map<String, Set<String>> sessionToLocalConnectionIds = new ConcurrentHashMap<>();
+    // connectionId -> userId mapping for quick lookup on disconnect
+    private final Map<String, String> connectionIdToUserId = new ConcurrentHashMap<>();
 
     // Document state and versioning: sessionId -> code / version
     private final Map<String, String> documentMaster = new ConcurrentHashMap<>();
@@ -92,7 +94,8 @@ public class SessionService {
 
         // stop container if no participants remain
         if (session.getParticipants().isEmpty()) {
-            stopContainer(sessionId);
+            // Pass the auth so stopContainer can broadcast who triggered it (if any)
+            stopContainer(sessionId, auth);
         }
     }
 
@@ -112,6 +115,23 @@ public class SessionService {
 
         session.setActive(false);
         sessionRepository.save(session);
+
+        // Broadcast session end to all subscribers so clients can react and leave the session UI
+        try {
+            String endedBy = (auth != null && auth.getName() != null) ? auth.getName() : "system";
+            Map<String, Object> payload = Map.of("type", "ended", "by", endedBy);
+            // Publish to Redis for cross-instance delivery
+            redisPublisher.publishSessionEnded(sessionId.toString(), payload);
+            // Also broadcast locally via SimpMessagingTemplate to ensure subscribers
+            // connected to this instance receive the event immediately.
+            try {
+                msgTemplate.convertAndSend("/topic/session/" + sessionId.toString() + "/end", payload);
+            } catch (Exception e) {
+                System.err.println("Failed to send local session end websocket message: " + e.getMessage());
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to publish session end event: " + e.getMessage());
+        }
     }
 
     // ------------------- Docker Management -------------------
@@ -237,11 +257,24 @@ public class SessionService {
         return output;
     }
 
-    public void stopContainer(UUID sessionId) {
+    public void stopContainer(UUID sessionId, Authentication auth) {
         String containerName = sessionDockerMap.get(sessionId);
         if (containerName != null) {
-            try { new ProcessBuilder("docker", "stop", containerName).start().waitFor(); }
-            catch (Exception e) { e.printStackTrace(); }
+            try {
+                new ProcessBuilder("docker", "stop", containerName).start().waitFor();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            // Notify all clients about the container stop
+            String by = (auth != null && auth.getName() != null) ? auth.getName() : "system";
+            String message = String.format("Container %s stopped by %s", containerName, by);
+            broadcastTerminalOutput(sessionId, message);
+        } else {
+            // Nothing to stop, still notify clients so UI remains consistent
+            String by = (auth != null && auth.getName() != null) ? auth.getName() : "system";
+            String message = String.format("No running container to stop (requested by %s)", by);
+            broadcastTerminalOutput(sessionId, message);
         }
     }
 
@@ -281,16 +314,138 @@ public class SessionService {
     // ... (userJoined, userLeft, applyEdit, replyToUser remain unchanged)
 
     public void userJoined(String sessionId, String connectionId, String userId) {
-        sessionToLocalConnectionIds.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(connectionId);
-        redisPublisher.publishPresence(sessionId,
-                Map.of("type", "joined", "userId", userId));
+        Set<String> set = sessionToLocalConnectionIds.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet());
+
+        // Only publish presence when this connectionId is newly associated with the session
+        boolean added = set.add(connectionId);
+        // Track connection -> user mapping
+        connectionIdToUserId.put(connectionId, userId);
+
+        if (added) {
+            // Broadcast presence only on the first association for this connection
+            System.out.println("\n🟢 [SessionService] USER JOINED EVENT");
+            System.out.println("[SessionService] 📍 Session ID: " + sessionId);
+            System.out.println("[SessionService] 👤 User ID: " + userId);
+            System.out.println("[SessionService] 🔗 Connection ID: " + connectionId);
+            System.out.println("[SessionService] 📤 Publishing to Redis channel: session-presence:" + sessionId);
+            
+            redisPublisher.publishPresence(sessionId,
+                    Map.of("type", "joined", "userId", userId));
+            
+            System.out.println("[SessionService] ✅ Presence published successfully");
+            System.out.println("=".repeat(80) + "\n");
+        }
     }
 
     public void userLeft(String sessionId, String connectionId, String userId) {
         Set<String> set = sessionToLocalConnectionIds.get(sessionId);
         if (set != null) set.remove(connectionId);
+
+        // Remove the connection->user mapping
+        connectionIdToUserId.remove(connectionId);
+
+        // If the user still has other active connections for this session, do not broadcast 'left'
+        boolean stillPresent = false;
+        if (set != null) {
+            for (String conn : set) {
+                String uid = connectionIdToUserId.get(conn);
+                if (uid != null && uid.equals(userId)) {
+                    stillPresent = true;
+                    break;
+                }
+            }
+        }
+
+        if (!stillPresent) {
+            System.out.println("\n🔴 [SessionService] USER LEFT EVENT");
+            System.out.println("[SessionService] 📍 Session ID: " + sessionId);
+            System.out.println("[SessionService] 👤 User ID: " + userId);
+            System.out.println("[SessionService] 🔗 Connection ID: " + connectionId);
+            System.out.println("[SessionService] 📤 Publishing to Redis channel: session-presence:" + sessionId);
+            
+            redisPublisher.publishPresence(sessionId,
+                    Map.of("type", "left", "userId", userId));
+            
+            System.out.println("[SessionService] ✅ Presence published successfully");
+            System.out.println("=".repeat(80) + "\n");
+        }
+    }
+
+    /**
+     * Called when a WebSocket connection is closed/disconnected.
+     * Finds any sessions associated with the connectionId and removes it, firing a userLeft
+     * event when appropriate.
+     */
+    public void connectionClosed(String connectionId) {
+        if (connectionId == null) {
+            System.err.println("[SessionService] ❌ connectionClosed() called with NULL connectionId!");
+            return;
+        }
+
+        System.out.println("\n🟢 [SessionService] USER LEFT EVENT");
+        System.out.println("[SessionService] 🔗 Connection ID: " + connectionId);
+
+        // Find any sessions that reference this connectionId
+        for (Map.Entry<String, Set<String>> entry : sessionToLocalConnectionIds.entrySet()) {
+            String sessionId = entry.getKey();
+            Set<String> set = entry.getValue();
+            if (set != null && set.contains(connectionId)) {
+                System.out.println("[SessionService] 📍 Session ID: " + sessionId);
+                
+                // Resolve userId for this connection
+                String userId = connectionIdToUserId.get(connectionId);
+                System.out.println("[SessionService] 👤 User ID: " + userId);
+                
+                // Remove the connection from the set
+                set.remove(connectionId);
+                // Remove mapping
+                connectionIdToUserId.remove(connectionId);
+
+                // If userId is available, determine if they still have other connections
+                boolean stillPresent = false;
+                if (userId != null) {
+                    for (String conn : set) {
+                        String uid = connectionIdToUserId.get(conn);
+                        if (uid != null && uid.equals(userId)) {
+                            stillPresent = true;
+                            break;
+                        }
+                    }
+                }
+
+                System.out.println("[SessionService] 🔍 Still has other connections: " + stillPresent);
+
+                if (userId != null && !stillPresent) {
+                    System.out.println("[SessionService] 📤 Publishing to Redis channel: session-presence:" + sessionId);
+                    redisPublisher.publishPresence(sessionId,
+                            Map.of("type", "left", "userId", userId));
+                    System.out.println("[SessionService] ✅ Presence published successfully");
+                } else if (userId == null) {
+                    System.err.println("[SessionService] ❌ User ID is NULL - cannot publish leave event!");
+                } else {
+                    System.out.println("[SessionService] ℹ️ User still has active connections - not publishing leave event");
+                }
+            }
+        }
+        
+        System.out.println("=".repeat(80) + "\n");
+    }
+
+    /**
+     * Explicitly publishes a user left event to Redis when a user voluntarily leaves.
+     * This is called when user unsubscribes from the presence topic.
+     */
+    public void publishUserLeft(String sessionId, String userId) {
+        System.out.println("\n🟡 [SessionService] USER LEFT (EXPLICIT)");
+        System.out.println("[SessionService] 📍 Session ID: " + sessionId);
+        System.out.println("[SessionService] 👤 User ID: " + userId);
+        System.out.println("[SessionService] 📤 Publishing to Redis channel: session-presence:" + sessionId);
+        
         redisPublisher.publishPresence(sessionId,
                 Map.of("type", "left", "userId", userId));
+        
+        System.out.println("[SessionService] ✅ Presence published successfully");
+        System.out.println("=".repeat(80) + "\n");
     }
 
     // ------------------- Document Editing -------------------

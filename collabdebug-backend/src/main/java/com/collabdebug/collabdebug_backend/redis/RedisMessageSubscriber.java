@@ -51,6 +51,15 @@ public class RedisMessageSubscriber {
                 Map<String, Object> presence = objectMapper.readValue(messageBody, Map.class);
                 template.convertAndSend("/topic/session/" + sessionId + "/presence", presence);
 
+            } else if (channel.startsWith("session-end:")) {
+                // 5. Session End notifications
+                Map<String, Object> endPayload = objectMapper.readValue(messageBody, Map.class);
+                template.convertAndSend("/topic/session/" + sessionId + "/end", endPayload);
+
+            } else if (channel.startsWith("session-meta:")) {
+                // 6. Session metadata updates (language, etc.)
+                Map<String, Object> meta = objectMapper.readValue(messageBody, Map.class);
+                template.convertAndSend("/topic/session/" + sessionId + "/meta", meta);
             } else {
                 System.err.println("WARN: Received message on unknown Redis channel: " + channel);
             }

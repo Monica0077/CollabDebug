@@ -80,7 +80,7 @@ public class SessionController {
             @PathVariable UUID sessionId,
             Authentication auth
     ) {
-        sessionService.stopContainer(sessionId);
+        sessionService.stopContainer(sessionId, auth);
         return ResponseEntity.noContent().build();
     }
 

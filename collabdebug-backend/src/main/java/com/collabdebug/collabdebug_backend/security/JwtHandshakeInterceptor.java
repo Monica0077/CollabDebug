@@ -74,6 +74,8 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                 // NOTE: Ensure StompPrincipal is available or use another Principal implementation
                 Principal user = new StompPrincipal(username);
                 attributes.put("principal", user);
+                System.out.println("✅ HTTP Handshake authenticated for user: " + username);
+                System.out.println("   Principal stored in session attributes");
                 return true;
             }
         } catch (Exception e) {
