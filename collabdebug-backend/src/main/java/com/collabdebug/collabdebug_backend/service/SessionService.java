@@ -5,6 +5,8 @@ import com.collabdebug.collabdebug_backend.dto.ws.EditResponse;
 import com.collabdebug.collabdebug_backend.model.DebugSession;
 import com.collabdebug.collabdebug_backend.redis.RedisPublisher;
 import com.collabdebug.collabdebug_backend.repository.DebugSessionRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
@@ -24,6 +26,9 @@ public class SessionService {
     public static final String CHAT_REDIS_TOPIC_PREFIX = "chat-updates:";
     public static final String TERMINAL_REDIS_TOPIC_PREFIX = "terminal-updates:";
     private final RedisPublisher redisPublisher;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
 
     // Docker container mapping: sessionId -> containerName
     private final Map<UUID, String> sessionDockerMap = new ConcurrentHashMap<>();
@@ -74,11 +79,27 @@ public class SessionService {
 
         String username = authentication.getName();
         session.setCurrentUser(username);
+        
+        // 🚨 DEBUG: Log participants before join
+        System.out.println("\n🟢 [SessionService.joinSession] BEFORE adding participant");
+        System.out.println("[SessionService.joinSession] Session ID: " + sessionId);
+        System.out.println("[SessionService.joinSession] Current participants in DB: " + session.getParticipants());
+        System.out.println("[SessionService.joinSession] User joining: " + username);
+        
         // Only add if not already present
         if (!session.getParticipants().contains(username)) {
             session.getParticipants().add(username);
+            System.out.println("[SessionService.joinSession] ✅ Added user: " + username);
+        } else {
+            System.out.println("[SessionService.joinSession] ℹ️ User already in participants: " + username);
         }
+        
         sessionRepository.save(session); // persist
+        entityManager.flush(); // Force flush to DB
+        
+        // 🚨 DEBUG: Log participants after save
+        System.out.println("[SessionService.joinSession] AFTER saving to DB: " + session.getParticipants());
+        System.out.println("=".repeat(80) + "\n");
 
         return session;
     }
@@ -89,14 +110,45 @@ public class SessionService {
                 .orElseThrow(() -> new RuntimeException("Session not found"));
 
         String username = auth.getName();
-        session.getParticipants().remove(username);
+        
+        // 🚨 DEBUG: Log before removal
+        System.out.println("\n🔴 [SessionService.leaveSession] User LEAVING session");
+        System.out.println("[SessionService.leaveSession] Session ID: " + sessionId);
+        System.out.println("[SessionService.leaveSession] Current participants in DB: " + session.getParticipants());
+        System.out.println("[SessionService.leaveSession] User leaving: " + username);
+        
+        boolean wasRemoved = session.getParticipants().remove(username);
+        System.out.println("[SessionService.leaveSession] ✅ User removed: " + wasRemoved + " - Remaining: " + session.getParticipants());
+        
         sessionRepository.save(session);
+        entityManager.flush(); // Force flush to DB to ensure changes are persisted immediately
+        
+        // 🚨 DEBUG: Verify removal was persisted
+        System.out.println("[SessionService.leaveSession] AFTER saving to DB: " + session.getParticipants());
+
+        // Publish a presence "left" event so other instances and clients are notified instantly
+        try {
+            Map<String, Object> payload = Map.of("type", "left", "userId", username);
+            // Publish to Redis for cross-instance delivery
+            redisPublisher.publishPresence(sessionId.toString(), payload);
+            // Also send locally to connected WebSocket clients to ensure immediate update
+            try {
+                msgTemplate.convertAndSend("/topic/session/" + sessionId.toString() + "/presence", payload);
+            } catch (Exception e) {
+                System.err.println("Failed to send local websocket presence message: " + e.getMessage());
+            }
+            System.out.println("[SessionService] ✅ Published 'left' presence for user: " + username + " session: " + sessionId);
+        } catch (Exception e) {
+            System.err.println("[SessionService] Failed to publish presence left event: " + e.getMessage());
+        }
 
         // stop container if no participants remain
         if (session.getParticipants().isEmpty()) {
+            System.out.println("[SessionService.leaveSession] ⏹️ No more participants - stopping container");
             // Pass the auth so stopContainer can broadcast who triggered it (if any)
             stopContainer(sessionId, auth);
         }
+        System.out.println("=".repeat(80) + "\n");
     }
 
     @Transactional

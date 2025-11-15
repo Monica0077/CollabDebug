@@ -55,7 +55,7 @@ public class DebugSession {
 
     @Column
     private LocalDateTime lastModifiedAt;
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     private Set<String> participants = new HashSet<>();
     @Transient
     private String currentUser;

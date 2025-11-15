@@ -64,17 +64,30 @@
 
 .cta-button {
   display: inline-block;
-  padding: 1rem 2rem;
-  background-color: #4299e1;
+  padding: 12px 28px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  border-radius: 6px;
+  border-radius: 8px;
   text-decoration: none;
   font-weight: 600;
-  transition: background-color 0.2s ease;
+  font-size: 15px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
 }
 
 .cta-button:hover {
-  background-color: #3182ce;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+  opacity: 1;
+}
+
+.cta-button:active {
+  transform: translateY(0);
 }
 
 .docs-container {

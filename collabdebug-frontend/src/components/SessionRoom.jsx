@@ -106,6 +106,34 @@ const SessionRoom = () => {
         return () => clearInterval(syncInterval);
     }, [sessionId, participants]);
 
+    // ✅ NEW: Handle user leaving via navigate (back to dashboard) or closing the page
+    useEffect(() => {
+        const handleBeforeUnload = async (e) => {
+            // This runs when: close tab, refresh, navigate away
+            try {
+                if (sessionActive && currentUserRef.current) {
+                    console.log('[SessionRoom] User leaving page - disconnecting WebSocket and publishing leave event');
+                    
+                    // Disconnect STOMP client first
+                    if (stompClientRef.current && stompClientRef.current.connected) {
+                        console.log('[SessionRoom] Deactivating STOMP on page unload...');
+                        stompClientRef.current.deactivate();
+                    }
+                    
+                    // Call the leave API to notify backend (which publishes to Redis)
+                    await apiLeaveSession(sessionId);
+                }
+            } catch (err) {
+                console.error('[SessionRoom] Error during cleanup:', err);
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+    }, [sessionId, sessionActive]);
+
     // --- WebSocket / STOMP Setup ---
     useEffect(() => {
         // 🔑 Get token
@@ -295,16 +323,28 @@ const SessionRoom = () => {
         };
         
         client.onWebSocketClose = () => {
-        console.warn('STOMP disconnected');
-        setIsConnected(false); // Set connection state to false on close
+            console.warn('STOMP disconnected');
+            setIsConnected(false); // Set connection state to false on close
+            // When WebSocket closes, try to publish a final leave event if needed
+            // This catches cases where the user closes the tab/window
+            if (currentUserRef.current && sessionId) {
+                console.log('[SessionRoom] WebSocket closed - attempting to publish leave event via API');
+                apiLeaveSession(sessionId).catch(err => 
+                    console.error('[SessionRoom] Could not publish leave on WebSocket close:', err)
+                );
+            }
         };
         client.activate();
         setStompClient(client);
         stompClientRef.current = client;
 
         return () => {
-            // Clean up on unmount
-            if(client.connected) client.deactivate();
+            // Clean up on unmount - this is crucial when navigating away
+            console.log('[SessionRoom] Cleaning up STOMP client on unmount');
+            if (client && client.connected) {
+                console.log('[SessionRoom] Deactivating client on component unmount');
+                client.deactivate();
+            }
             setIsConnected(false);
             stompClientRef.current = null;
         };
@@ -432,10 +472,32 @@ const SessionRoom = () => {
 
     const handleLeaveSession = async () => {
         try {
+            console.log('[SessionRoom] User clicked "Leave Session" - cleaning up WebSocket and publishing leave event to backend');
+            
+            // Step 1: Disconnect STOMP client to trigger WebSocket close events
+            if (stompClientRef.current && stompClientRef.current.connected) {
+                console.log('[SessionRoom] Disconnecting STOMP client...');
+                stompClientRef.current.deactivate();
+                setIsConnected(false);
+            }
+            
+            // Step 2: Wait a moment for WebSocket to close
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Step 3: Call the API to remove user from session DB and publish Redis presence event
+            console.log('[SessionRoom] Calling leaveSession API...');
             await apiLeaveSession(sessionId);
+            
+            // Step 4: Wait a moment to allow Redis to process the presence event
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Step 5: Navigate back to dashboard
+            console.log('[SessionRoom] Navigating to dashboard...');
             navigate('/dashboard');
         } catch (err) {
             console.error("Leave session failed", err);
+            // Still navigate even if something fails
+            navigate('/dashboard');
         }
     };
 
