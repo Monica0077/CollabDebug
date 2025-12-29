@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import '../Dashboard.css';
 import { listSessions, joinSession } from '../services/sessionApi';
 import CreateSessionModal from './CreateSessionModal';
+import ExploreProjects from './ExploreProjects';
 import { FaPlus, FaCode, FaUsers, FaSpinner } from 'react-icons/fa';
 
 const Dashboard = () => {
@@ -10,6 +11,7 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('sessions'); // 'sessions', 'projects', 'team'
   const navigate = useNavigate();
 
   const fetchSessions = async () => {
@@ -57,62 +59,85 @@ const Dashboard = () => {
     <div className="dashboard-container">
       <h1>Collaboration Dashboard</h1>
 
-      {/* Action Cards */}
-      <div className="dashboard-cards">
-        {/* Create Session Card */}
-        <div 
-          className="card-create-session"
-          onClick={() => setIsModalOpen(true)}
+      {/* Tab Navigation */}
+      <div className="dashboard-tabs">
+        <button
+          className={`tab-button ${activeTab === 'sessions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('sessions')}
         >
-          <FaPlus />
-          <h2>Create New Session</h2>
-          <p>Start a new shared coding room.</p>
-        </div>
-
-        {/* Explore Projects */}
-        <div className="card-default">
-          <FaCode />
-          <h2>Explore Projects</h2>
-          <p>View your existing codebases.</p>
-        </div>
-
-        {/* My Team */}
-        <div className="card-default">
-          <FaUsers />
-          <h2>My Team</h2>
-          <p>Manage participants and access.</p>
-        </div>
+          <FaPlus /> Create Session
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'projects' ? 'active' : ''}`}
+          onClick={() => setActiveTab('projects')}
+        >
+          <FaCode /> Explore Projects
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'team' ? 'active' : ''}`}
+          onClick={() => setActiveTab('team')}
+        >
+          <FaUsers /> My Team
+        </button>
       </div>
 
-      {/* Active Sessions List */}
-      <h2>Active Collaboration Rooms ({sessions.length})</h2>
-
-      {error && <div className="dashboard-error">{error}</div>}
-
-      {sessions.length === 0 && !isLoading && !error ? (
-        <div className="dashboard-empty">
-          <p>No active sessions found. Be the first to create one!</p>
-        </div>
-      ) : (
-        <div className="sessions-list">
-          {sessions.map((session) => (
-            <div key={session.id} className="session-card">
-              <div>
-                <h3>{session.name}</h3>
-                <p>ID: {session.id.substring(0, 8)}... | Owner: {session.ownerUsername || 'N/A'}</p>
-              </div>
-              <button onClick={() => handleJoinSession(session.id)}>Join Session</button>
+      {/* Tab Content */}
+      {activeTab === 'sessions' && (
+        <>
+          {/* Action Cards */}
+          <div className="dashboard-cards">
+            {/* Create Session Card */}
+            <div 
+              className="card-create-session"
+              onClick={() => setIsModalOpen(true)}
+            >
+              <FaPlus />
+              <h2>Create New Session</h2>
+              <p>Start a new shared coding room.</p>
             </div>
-          ))}
-        </div>
+          </div>
+
+          {/* Active Sessions List */}
+          <h2>Active Collaboration Rooms ({sessions.length})</h2>
+
+          {error && <div className="dashboard-error">{error}</div>}
+
+          {sessions.length === 0 && !isLoading && !error ? (
+            <div className="dashboard-empty">
+              <p>No active sessions found. Be the first to create one!</p>
+            </div>
+          ) : (
+            <div className="sessions-list">
+              {sessions.map((session) => (
+                <div key={session.id} className="session-card">
+                  <div>
+                    <h3>{session.name}</h3>
+                    <p>ID: {session.id.substring(0, 8)}... | Owner: {session.ownerUsername || 'N/A'}</p>
+                  </div>
+                  <button onClick={() => handleJoinSession(session.id)}>Join Session</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* The Modal */}
+          {isModalOpen && (
+            <CreateSessionModal 
+              onClose={() => setIsModalOpen(false)}
+              onSuccess={handleSessionCreated}
+            />
+          )}
+        </>
       )}
 
-      {/* The Modal */}
-      {isModalOpen && (
-        <CreateSessionModal 
-          onClose={() => setIsModalOpen(false)}
-          onSuccess={handleSessionCreated}
-        />
+      {activeTab === 'projects' && (
+        <ExploreProjects />
+      )}
+
+      {activeTab === 'team' && (
+        <div className="team-content">
+          <p>Team management features coming soon...</p>
+        </div>
       )}
     </div>
   );

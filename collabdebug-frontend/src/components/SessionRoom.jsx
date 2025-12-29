@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import CollabEditor from './CollabEditor'; // MUST be wrapped with React.forwardRef
 import { joinSession } from '../services/sessionApi';
 import { runCode } from '../services/sandboxApi';
@@ -19,6 +19,7 @@ const BACKEND_URL = 'http://localhost:8080/ws/session';
 const SessionRoom = () => {
     const { sessionId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
     const [code, setCode] = useState('');
     const [language, setLanguage] = useState('java');
     const [terminalOutput, setTerminalOutput] = useState("--- Terminal Output ---\nReady to run code...");
@@ -58,8 +59,18 @@ const SessionRoom = () => {
                 setOwner(session.ownerUsername || 'Unknown');
                 setParticipants(session.participants || []);
                 setCurrentUser(session.currentUser || 'Me');
-                setLanguage(session.language || 'java');
-                setCode(session.latestCode || initialCode[session.language || 'java'] || initialCode.java);
+                
+                // Check if there's initial code from project in location state
+                const projectInitialCode = location.state?.initialCode;
+                const projectLanguage = location.state?.language;
+                
+                if (projectLanguage) {
+                    setLanguage(projectLanguage);
+                }
+                
+                // Use project code if available, otherwise use session code
+                const codeToSet = projectInitialCode || session.latestCode || initialCode[projectLanguage || session.language || 'java'] || initialCode.java;
+                setCode(codeToSet);
             } catch (err) {
                 console.error("Failed to join session:", err);
                 // If the session was ended server-side, join will return 403.
@@ -76,7 +87,7 @@ const SessionRoom = () => {
             }
         };
         loadSession();
-    }, [sessionId]);
+    }, [sessionId, location.state]);
 
     // Add periodic sync for participants list
     useEffect(() => {
