@@ -24,6 +24,7 @@ const SessionRoom = () => {
     const [language, setLanguage] = useState('java');
     const [terminalOutput, setTerminalOutput] = useState("--- Terminal Output ---\nReady to run code...");
     const [owner, setOwner] = useState('');
+    const [sessionName, setSessionName] = useState('');
     const [participants, setParticipants] = useState([]);
     const [currentUser, setCurrentUser] = useState('');
     const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -31,7 +32,6 @@ const SessionRoom = () => {
     const [chatInput, setChatInput] = useState('');
     const [sessionActive, setSessionActive] = useState(true);
     const [showSessionEndModal, setShowSessionEndModal] = useState(false);
-    // ✅ FIX 1: Ref to hold the Monaco Editor instance (requires CollabEditor to use forwardRef)
     const editorRef = useRef(null); 
     const chatEndRef = useRef(null);
     const stompClientRef = useRef(null);
@@ -39,7 +39,7 @@ const SessionRoom = () => {
     const [stompClient, setStompClient] = useState(null); 
     const [isConnected, setIsConnected] = useState(false);
     
-    // ✅ Use a Ref to hold the latest currentUser for stable subscriptions
+    // Use a Ref to hold the latest currentUser for stable subscriptions
     const currentUserRef = useRef(currentUser);
     useEffect(() => {
         currentUserRef.current = currentUser;
@@ -57,6 +57,7 @@ const SessionRoom = () => {
             try{
                 const session = await joinSession(sessionId);
                 setOwner(session.ownerUsername || 'Unknown');
+                setSessionName(session.name || 'Unnamed Session');
                 setParticipants(session.participants || []);
                 setCurrentUser(session.currentUser || 'Me');
                 
@@ -89,38 +90,11 @@ const SessionRoom = () => {
         loadSession();
     }, [sessionId, location.state]);
 
-    // Add periodic sync for participants list
-    useEffect(() => {
-        const syncParticipants = async () => {
-            try {
-                const session = await joinSession(sessionId);
-                if (JSON.stringify(session.participants) !== JSON.stringify(participants)) {
-                    console.log('[Presence] Syncing participants from server:', session.participants);
-                    setParticipants(session.participants || []);
-                }
-            } catch (err) {
-                console.error("Failed to sync participants:", err);
-                // If session became inactive, stop polling and redirect users
-                if (err?.response?.status === 403) {
-                    const by = err.response?.data?.by || 'system';
-                    const text = `Session ended by ${by}.`;
-                    setChatMessages(prev => [...prev, { userId: 'System', text: `${text} Click OK to return to dashboard.`, timestamp: Date.now() }]);
-                    setTerminalOutput(prev => prev + `\n--- SESSION INACTIVE ---\nSession was ended by ${by}.`);
-                    setSessionActive(false);
-                    setShowSessionEndModal(true);
-                }
-            }
-        };
-
-        // Sync every 30 seconds
-        const syncInterval = setInterval(syncParticipants, 30000);
-        return () => clearInterval(syncInterval);
-    }, [sessionId, participants]);
-
-    // ✅ NEW: Handle user leaving via navigate (back to dashboard) or closing the page
+    
+    // Handle user leaving via navigate (back to dashboard) or closing the page
     useEffect(() => {
         const handleBeforeUnload = async (e) => {
-            // This runs when: close tab, refresh, navigate away
+            // This runs when: close tab, navigate away
             try {
                 if (sessionActive && currentUserRef.current) {
                     console.log('[SessionRoom] User leaving page - disconnecting WebSocket and publishing leave event');
@@ -147,7 +121,7 @@ const SessionRoom = () => {
 
     // --- WebSocket / STOMP Setup ---
     useEffect(() => {
-        // 🔑 Get token
+        //  Get token
         if (stompClientRef.current) {
             console.log('STOMP client already active. Skipping setup.');
             return; 
@@ -158,14 +132,14 @@ const SessionRoom = () => {
             return; 
         }
         
-        // 🔑 Construct the SockJS URL with the token in the query parameter
+        //  Construct the SockJS URL with the token in the query parameter
         const socketUrlWithToken = `${BACKEND_URL}?token=${token}`; 
         const authHeader = `Bearer ${token}`;
         
-        // 🎯 Use the correct backend URL for SockJS
+        //  Use the correct backend URL for SockJS
         const socket = new SockJS(socketUrlWithToken); 
         
-        // 🎯 Use the modern Client API
+        //  Use the modern Client API
         const client = new Client({ 
             webSocketFactory: () => socket, // Pass the SockJS instance as a factory
             reconnectDelay: 5000,
@@ -191,7 +165,6 @@ const SessionRoom = () => {
                     // Update local React state
                     setCode(receivedCode); 
                     
-                    // 🚨 CRITICAL FIX 3: Update Monaco Editor directly using the ref
                     if (editorRef.current) {
                         // Use setValue to update the editor content
                         editorRef.current.setValue(receivedCode);
@@ -270,8 +243,19 @@ const SessionRoom = () => {
                             console.log('[Presence] After join - Current participants:', newList);
                             return newList;
                         });
-                        // Add a small system chat message to notify users
-                        setChatMessages(prev => [...prev, { userId: 'System', text: `${event.userId} joined the session`, timestamp: Date.now() }]);
+                        // Add a small system chat message to notify users - with duplicate check
+                        setChatMessages(prev => {
+                            const isDuplicate = prev.some(msg => 
+                                msg.userId === 'System' && 
+                                msg.text === `${event.userId} joined the session`
+                            );
+                            
+                            if (isDuplicate) {
+                                console.log(`[Presence] Duplicate join message for ${event.userId} - skipping`);
+                                return prev;
+                            }
+                            return [...prev, { userId: 'System', text: `${event.userId} joined the session`, timestamp: Date.now() }];
+                        });
                     } else if (event.type === 'left') {
                         setParticipants(prev => {
                             // Enhanced filtering with better logging
@@ -283,8 +267,19 @@ const SessionRoom = () => {
                             console.log(`[Presence] Updated participants:`, newList);
                             return newList;
                         });
-                        // Add a small system chat message to notify users
-                        setChatMessages(prev => [...prev, { userId: 'System', text: `${event.userId} left the session`, timestamp: Date.now() }]);
+                        // Add a small system chat message to notify users - with duplicate check
+                        setChatMessages(prev => {
+                            const isDuplicate = prev.some(msg => 
+                                msg.userId === 'System' && 
+                                msg.text === `${event.userId} left the session`
+                            );
+                            
+                            if (isDuplicate) {
+                                console.log(`[Presence] Duplicate leave message for ${event.userId} - skipping`);
+                                return prev;
+                            }
+                            return [...prev, { userId: 'System', text: `${event.userId} left the session`, timestamp: Date.now() }];
+                        });
                     }
                 } catch (error) {
                     console.error('[Presence] Error handling presence event:', error);
@@ -528,7 +523,7 @@ const SessionRoom = () => {
             <div className="session-main">
                 {/* ... (Session Header remains the same) ... */}
                 <div className="session-header">
-                    <h2>Session: {sessionId.substring(0,8)}...</h2>
+                    <h2>{sessionName}</h2>
                     {!sessionActive && (
                         <div style={{color: 'crimson', marginTop: 8}}>Session has ended — you will be redirected shortly.</div>
                     )}

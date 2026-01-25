@@ -51,10 +51,8 @@ function App() {
         <Routes>
           
           <Route path="/login" element={<Login />} />
-          {/* always allow register page */}
           <Route path="/register" element={<Register />} />
-
-          <Route path="/home" element={<Home />} />
+          <Route path="/home" element={token ? <Home /> : <Navigate to="/login" />} />
           <Route path="/dashboard" element={token ? <Dashboard/> : <Navigate to="/login" />} />
           <Route path="/session/:sessionId" element={token ? <SessionRoom/> : <Navigate to="/login" />} />
           <Route path="/features" element={token ? <Features /> : <Navigate to="/login" />} />
